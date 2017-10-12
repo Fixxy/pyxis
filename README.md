@@ -1,2 +1,2 @@
 # pyxis
-python pandora client
+WIP Pandora client /w auto-proxy
