@@ -51,15 +51,13 @@ def pandora_connect(proxy_address):
 	return
 
 def json_call(method, raw_data, en_blowfish = False):
-	#data = urllib.parse.urlencode(raw_data).encode('utf-8')
 	data = json.dumps(raw_data).encode('utf-8')
-	data2 = ''
 	
 	if en_blowfish:
 		data = encrypt(data)
 	print('[client] %s' % data)
 	
-	output = parse.return_data(('%smethod=%s' % (pandora_api_url, method)), 1, proxy_address, data, hdr)
+	output = parse.return_data(('%smethod=%s' % (pandora_api_url, method)), proxy_address, data, hdr)
 	print('[pandora] %s' % json.loads(output))
 	return json.loads(output)['result']
 	
@@ -68,7 +66,8 @@ def encrypt(s):
 	encrypt_blowfish = blowfish.Cipher(ENCRYPT_PASS.encode('utf-8'))
 	temp = b''
 	for i in range(0, len(s), 8):
-		temp += (codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8], 8)), 'hex_codec'))
+		print('%s >>> %s' % (s[i:i+8], codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec')))
+		temp += (codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec'))
 	return temp
 	
 def decrypt(s):
@@ -78,8 +77,8 @@ def decrypt(s):
 		temp += (decrypt_blowfish.decrypt_block(padding(codecs.decode(s[i:i+16], 'hex_codec'), 8))).rstrip(b'\x08')
 	return temp
 	
-def padding(s, l):
-	return s + b'\0' * (l - len(s))
+def padding(block, block_size):
+	return block + (b'\0' * (block_size - len(block)))
 	
 '''
 try:

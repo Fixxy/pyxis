@@ -7,7 +7,7 @@ website = 'https://pandora.com'
 hdr = {'Accept': 'text/html', 'User-Agent' : 'Fiddler'}
 
 def find_new():
-	html = parse.return_data('https://www.us-proxy.org/', 0, '', None, hdr)
+	html = parse.return_data('https://www.us-proxy.org/', '', None, hdr, enable_proxy = True)
 	table = parse.get_tag_data(html, 'table', 0, 'proxylisttable')[0].tbody
 	rows = table.find_all('tr')
 	for row in rows:
@@ -15,7 +15,7 @@ def find_new():
 		print('Checking: %s:%s' % (r[0].get_text(),r[1].get_text()))
 		try:
 			address = r[0].get_text() + ':' +  r[1].get_text()
-			testHTML = parse.return_data(website, 1, address, None, hdr)
+			testHTML = parse.return_data(website, address, None, hdr)
 			print('it works (%s)' % website)
 			replace_config(pianobar_cfg, proxy_string, ('https://%s:%s' % (r[0].get_text(), r[1].get_text())))
 			break
@@ -42,7 +42,7 @@ def setup():
 	proxy = get_from_config()
 	print('Checking %s' % proxy)
 	try:
-		testHTML = parse.return_data(website, 1, proxy, None, hdr)
+		testHTML = parse.return_data(website, proxy, None, hdr)
 		print('old proxy works')
 		
 	except:
