@@ -7,7 +7,7 @@ website = 'https://pandora.com'
 hdr = {'Accept': 'text/html', 'User-Agent' : 'Fiddler'}
 
 def find_new():
-	html = parse.return_data('https://www.us-proxy.org/', '', None, hdr, enable_proxy = True)
+	html = parse.return_data('https://www.us-proxy.org/', None, None, hdr, enable_proxy = False)
 	table = parse.get_tag_data(html, 'table', 0, 'proxylisttable')[0].tbody
 	rows = table.find_all('tr')
 	for row in rows:
