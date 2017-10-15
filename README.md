@@ -1,2 +1,2 @@
 # pyxis
-WIP Pandora client /w auto-proxy
+WIP Pandora player /w socks5 proxy support
