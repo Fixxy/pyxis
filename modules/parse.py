@@ -1,4 +1,4 @@
-import urllib, urllib.request, ssl, socket, configparser
+import urllib, urllib.request, ssl, socket
 from bs4 import BeautifulSoup
 from modules import proxy, socks
 from modules.sockshandler import SocksiPyHandler
@@ -10,6 +10,7 @@ def return_data(url, proxy_ip, proxy_port, data, hdr, enable_proxy = True):
 		proxy_ip, proxy_port = proxy.get_from_config()
 	
 	proxy_tls_handler = urllib.request.HTTPSHandler(context=ssl.SSLContext(ssl.PROTOCOL_TLS))
+	
 	proxy_socks_handler = SocksiPyHandler(socks.SOCKS5, proxy_ip, proxy_port)
 	
 	if enable_proxy:
@@ -17,8 +18,11 @@ def return_data(url, proxy_ip, proxy_port, data, hdr, enable_proxy = True):
 		opener = urllib.request.build_opener(proxy_socks_handler, proxy_tls_handler)
 	else:
 		opener = urllib.request.build_opener(proxy_tls_handler)
+	
+	#opener = urllib.request.build_opener(proxy_tls_handler)
+	
 	urllib.request.install_opener(opener)
-		
+	
 	req = urllib.request.Request(url, data=data, headers=hdr)
 	output = urllib.request.urlopen(req, timeout=timeout).read()
 	return output

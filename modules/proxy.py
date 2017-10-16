@@ -33,6 +33,19 @@ def get_from_config():
 	proxy_port = int(config['proxy']['socks5_port'])
 	return proxy_ip, proxy_port
 	
+# get old / set new authpartnertoken
+def last_authtoken(token, type, get = True):
+	config = configparser.ConfigParser()
+	config.read(config_file)
+	if get:
+		last_authtoken = config['pandora'][type]
+	else:
+		config['pandora'][type] = token
+		with open(config_file, 'w') as configfile:
+			config.write(configfile)
+		last_authtoken = token
+	return last_authtoken
+	
 # check if old one works, if not find_new()
 def setup():
 	proxy_ip, proxy_port = get_from_config()

@@ -13,7 +13,7 @@ def encrypt(s):
 	encrypt_blowfish = blowfish.Cipher(ENCRYPT_PASS.encode('utf-8'))
 	temp = b''
 	for i in range(0, len(s), 8):
-		print('%s >>> %s' % (s[i:i+8], codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec')))
+		#print('%s >>> %s' % (s[i:i+8], codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec'))) # SHOW HOW IT WORKS
 		temp += (codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec'))
 	return temp
 	
@@ -37,7 +37,7 @@ def pandora_connect():
 		'password':'TVCKIBGS9AO9TSYLNNFUML0743LH82D',
 		'version':'5'
 	}
-	partner_info = json_call('auth.partnerLogin', data_step1)
+	partner_info = json_call('auth.partnerLogin', data_step1)['result']
 	
 	# sync time decrypt/calc
 	sync_time_raw = partner_info['syncTime'].encode('utf-8')
@@ -45,7 +45,7 @@ def pandora_connect():
 	global time_offset
 	time_offset = pandora_time - time.time()
 	sync_time = int(time.time() + time_offset)
-	print('offset:%s ; syncTime:%s\r\n' % (time_offset, sync_time))
+	print('offset:%s ; syncTime:%s' % (time_offset, sync_time))
 	
 	# step 2: user login
 	data_step2 = {
@@ -53,45 +53,63 @@ def pandora_connect():
 		'username':'',
 		'password':''
 	}
-	data_step2['partnerAuthToken'] = partner_info['partnerAuthToken']
 	data_step2['syncTime'] = sync_time
 	
 	global url_args
 	url_args['partnerId'] = partner_info['partnerId']
-	url_args['partnerAuthToken'] = partner_info['partnerAuthToken']
 	
-	user_info = json_call('auth.userLogin', data_step2, url_args, en_blowfish = True)
-	
+	# check old auth partner parameter
+	try:
+		url_args['partnerAuthToken'] = proxy.last_authtoken(None, 'partner_auth_token')
+		data_step2['partnerAuthToken'] = proxy.last_authtoken(None, 'partner_auth_token')
+		print('\r\n>> Checking if old partnerAuthToken works (%s)' % url_args['partnerAuthToken'])
+		user_info = json_call('auth.userLogin', data_step2, url_args, en_blowfish = True)['result']
+	except:
+		url_args['partnerAuthToken'] = partner_info['partnerAuthToken']
+		data_step2['partnerAuthToken'] = partner_info['partnerAuthToken']
+		print('\r\n>> Using a new partnerAuthToken (%s)' % url_args['partnerAuthToken'])
+		user_info = json_call('auth.userLogin', data_step2, url_args, en_blowfish = True)['result']
+		proxy.last_authtoken(url_args['partnerAuthToken'], 'partner_auth_token', get = False)
+		
 	url_args['userId'] = user_info['userId']
 	url_args['userAuthToken'] = user_info['userAuthToken']
-	
 	print(url_args)
 	
 	return url_args
 	
-	
+# self-explanatory
 def pandora_get_stations():
 	global time_offset
 	global url_args
+	
+	data = { }
 	sync_time = int(time.time() + time_offset)
+	new_user_auth_token = url_args['userAuthToken']
+	data['syncTime'] = sync_time
 	
-	data = {
-		'userAuthToken':url_args['userAuthToken'],
-		'syncTime':sync_time
-	}
-	result = json_call('user.getStationList', data, url_args, en_blowfish = True, https = False)
+	# check old user auth token
+	try:
+		data['userAuthToken'] = proxy.last_authtoken(None, 'user_auth_token')
+		url_args['userAuthToken'] = proxy.last_authtoken(None, 'user_auth_token')
+		print('\r\n>> Checking if old userAuthToken works (%s)' % url_args['userAuthToken'])
+		output = json_call('user.getStationList', data, url_args, en_blowfish = True, https = False)['result']
+	except:
+		data['userAuthToken'] = new_user_auth_token
+		url_args['userAuthToken'] = new_user_auth_token
+		
+		print('\r\n>> Using a new userAuthToken (%s)' % url_args['userAuthToken'])
+		output = json_call('user.getStationList', data, url_args, en_blowfish = True, https = False)['result']
+		proxy.last_authtoken(new_user_auth_token, 'user_auth_token', get = False)
 	
-	stations = {}
-	for s in result['stations']:
-		stations[s['stationId']] = s['stationName']
-	
-	for i in range(0, len(stations)):
-		print('%s) %s' % (i, s(i)))
-	
+	result = output['stations']
+	for i in range(0, len(result)):
+		print(i, result[i]['stationId'], result[i]['stationName'])
+
 	station_num = input('Select station: ')
-	print(stations[station_num])
-	return stations[station_num]
+	station_id = result[int(station_num)]['stationId']
+	return station_id
 	
+# self-explanatory
 def pandora_get_playlist(station_id):
 	global time_offset
 	global url_args
@@ -99,17 +117,26 @@ def pandora_get_playlist(station_id):
 	
 	data = {
 		'userAuthToken':url_args['userAuthToken'],
-		'additionalAudioUrl': 'HTTP_32_AACPLUS_ADTS,HTTP_64_AACPLUS_ADTS',
 		'syncTime':sync_time,
-		'stationToken':station_id
+		'stationToken':station_id,
+		'additionalAudioUrl':'HTTP_32_AACPLUS_ADTS,HTTP_128_MP3',
+		'includeTrackLength':True,	#debug
+		'audioAdPodCapable': True,	#debug
+		'includeTrackLength':True,	#debug
+		'xplatformAdCapable':True	#debug
+		
+		
 	}
-	result = json_call('station.getPlaylist', data, url_args, en_blowfish = True, https = True)
+	output = json_call('station.getPlaylist', data, url_args, en_blowfish = True, https = True)['result']
 	
-	print(result)
+	tracks = output['items']
+	for t in tracks:
+		#print(t)
+		print('%s by %s from %s' % (t['songName'], t['artistName'], t['albumName']))
 	
 	return
 	
-
+# json call routine
 def json_call(method, data, url_args = None, en_blowfish = False, https = True):
 	data = json.dumps(data).encode('utf-8')
 	
@@ -136,26 +163,16 @@ def json_call(method, data, url_args = None, en_blowfish = False, https = True):
 	url = protocol + pandora_api_url + 'method=' + method + url_args_string
 	print('url: %s' % url)
 	output = parse.return_data(url, None, None, data, hdr)
-	print('[pandora] %s\r\n' % json.loads(output))
 	
-	'''
-	while True:
-		try:
-			output = parse.return_data(url, None, None, data, hdr)
-			print('[pandora] %s\r\n' % json.loads(output)['result'])
-			break
-		except:
-			print('[pandora] ERROR. Trying again')
-	'''
+	print(json.loads(output))
+	func_out = json.loads(output)
 	
-	return json.loads(output)['result']
+	return func_out
 	
 # main()
 time_offset = 0
 url_args = {}
 
 pandora_connect()
-
 station_id = pandora_get_stations()
-
 pandora_get_playlist(station_id)
