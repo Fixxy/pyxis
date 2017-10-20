@@ -16,7 +16,7 @@ except ImportError: # Python 3
     import urllib.request as urllib2
     import http.client as httplib
 
-from modules import socks
+from external import socks
 
 def merge_dict(a, b):
     d = a.copy()

@@ -1,24 +1,33 @@
-import re, sys, socket, urllib, urllib.request, urllib.error, json, codecs, time
+import re, sys, socket, urllib, urllib.request, urllib.error, json, codecs, time, configparser, subprocess, logging
 from bs4 import BeautifulSoup
-from modules import parse, proxy, blowfish
+from modules import request, config, proxy
+from external import blowfish
 
-pandora_api_url = '://internal-tuner.pandora.com/services/json/?'
+logging.basicConfig(level=logging.DEBUG)
+
 hdr = {'User-agent': 'Pyxis', 'Content-type': 'text/plain'}
+pandora_api_url = config.get_from_config('pandora','api_url')
+device_model = config.get_from_config('pandora','device_model')
+partner_username = config.get_from_config('pandora','partner_username')
+partner_password = config.get_from_config('pandora','partner_password')
+version = config.get_from_config('pandora','version')
+encrypt_pass = config.get_from_config('pandora','encrypt_pass')
+decrypt_pass = config.get_from_config('pandora','decrypt_pass')
 
-ENCRYPT_PASS = '2%3WCL*JU$MP]4'
-DECRYPT_PASS = 'U#IO$RZPAB%VX2'
+username = config.get_from_config('pandora_user','username')
+password = config.get_from_config('pandora_user','password')
 
 # encode/decode using blowfish in ECB mode and convert to hexcode
 def encrypt(s):
-	encrypt_blowfish = blowfish.Cipher(ENCRYPT_PASS.encode('utf-8'))
+	encrypt_blowfish = blowfish.Cipher(encrypt_pass.encode('utf-8'))
 	temp = b''
 	for i in range(0, len(s), 8):
-		#print('%s >>> %s' % (s[i:i+8], codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec'))) # SHOW HOW IT WORKS
+		logging.debug('%s >>> %s' % (s[i:i+8], codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec')))
 		temp += (codecs.encode(encrypt_blowfish.encrypt_block(padding(s[i:i+8],8)), 'hex_codec'))
 	return temp
 	
 def decrypt(s):
-	decrypt_blowfish = blowfish.Cipher(DECRYPT_PASS.encode('utf-8'))
+	decrypt_blowfish = blowfish.Cipher(decrypt_pass.encode('utf-8'))
 	temp = b''
 	for i in range(0, len(s), 16):
 		temp += (decrypt_blowfish.decrypt_block(padding(codecs.decode(s[i:i+16], 'hex_codec'), 8))).rstrip(b'\x08')
@@ -31,11 +40,12 @@ def padding(block, block_size):
 # partner login + user login
 def pandora_connect():
 	# step 1: partner login
+	print('(i) Logging in')
 	data_step1 = {
-		'deviceModel':'D01',
-		'username':'pandora one',
-		'password':'TVCKIBGS9AO9TSYLNNFUML0743LH82D',
-		'version':'5'
+		'deviceModel':device_model,
+		'username':partner_username,
+		'password':partner_password,
+		'version':version
 	}
 	partner_info = json_call('auth.partnerLogin', data_step1)['result']
 	
@@ -45,13 +55,12 @@ def pandora_connect():
 	global time_offset
 	time_offset = pandora_time - time.time()
 	sync_time = int(time.time() + time_offset)
-	print('offset:%s ; syncTime:%s' % (time_offset, sync_time))
+	logging.debug('offset:%s ; syncTime:%s' % (time_offset, sync_time))
 	
-	# step 2: user login
 	data_step2 = {
 		'loginType':'user',
-		'username':'',
-		'password':''
+		'username':username,
+		'password':password
 	}
 	data_step2['syncTime'] = sync_time
 	
@@ -60,20 +69,20 @@ def pandora_connect():
 	
 	# check old auth partner parameter
 	try:
-		url_args['partnerAuthToken'] = proxy.last_authtoken(None, 'partner_auth_token')
-		data_step2['partnerAuthToken'] = proxy.last_authtoken(None, 'partner_auth_token')
-		print('\r\n>> Checking if old partnerAuthToken works (%s)' % url_args['partnerAuthToken'])
+		url_args['partnerAuthToken'] = config.last_authtoken(None, 'partner_auth_token')
+		data_step2['partnerAuthToken'] = config.last_authtoken(None, 'partner_auth_token')
+		print('> Checking if old partnerAuthToken works (%s)' % url_args['partnerAuthToken'])
 		user_info = json_call('auth.userLogin', data_step2, url_args, en_blowfish = True)['result']
 	except:
 		url_args['partnerAuthToken'] = partner_info['partnerAuthToken']
 		data_step2['partnerAuthToken'] = partner_info['partnerAuthToken']
-		print('\r\n>> Using a new partnerAuthToken (%s)' % url_args['partnerAuthToken'])
+		print('> Using a new partnerAuthToken (%s)' % url_args['partnerAuthToken'])
 		user_info = json_call('auth.userLogin', data_step2, url_args, en_blowfish = True)['result']
-		proxy.last_authtoken(url_args['partnerAuthToken'], 'partner_auth_token', get = False)
+		config.last_authtoken(url_args['partnerAuthToken'], 'partner_auth_token', get = False)
 		
 	url_args['userId'] = user_info['userId']
 	url_args['userAuthToken'] = user_info['userAuthToken']
-	print(url_args)
+	logging.debug(url_args)
 	
 	return url_args
 	
@@ -87,20 +96,22 @@ def pandora_get_stations():
 	new_user_auth_token = url_args['userAuthToken']
 	data['syncTime'] = sync_time
 	
+	# step 2: user login
 	# check old user auth token
 	try:
-		data['userAuthToken'] = proxy.last_authtoken(None, 'user_auth_token')
-		url_args['userAuthToken'] = proxy.last_authtoken(None, 'user_auth_token')
-		print('\r\n>> Checking if old userAuthToken works (%s)' % url_args['userAuthToken'])
+		data['userAuthToken'] = config.last_authtoken(None, 'user_auth_token')
+		url_args['userAuthToken'] = config.last_authtoken(None, 'user_auth_token')
+		print('> Checking if old userAuthToken works (%s)' % url_args['userAuthToken'])
 		output = json_call('user.getStationList', data, url_args, en_blowfish = True, https = False)['result']
 	except:
 		data['userAuthToken'] = new_user_auth_token
 		url_args['userAuthToken'] = new_user_auth_token
 		
-		print('\r\n>> Using a new userAuthToken (%s)' % url_args['userAuthToken'])
+		print('> Using a new userAuthToken (%s)' % url_args['userAuthToken'])
 		output = json_call('user.getStationList', data, url_args, en_blowfish = True, https = False)['result']
-		proxy.last_authtoken(new_user_auth_token, 'user_auth_token', get = False)
+		config.last_authtoken(new_user_auth_token, 'user_auth_token', get = False)
 	
+	print('\r\n(i) Stations:')
 	result = output['stations']
 	for i in range(0, len(result)):
 		print(i, result[i]['stationId'], result[i]['stationName'])
@@ -120,20 +131,23 @@ def pandora_get_playlist(station_id):
 		'syncTime':sync_time,
 		'stationToken':station_id,
 		'additionalAudioUrl':'HTTP_32_AACPLUS_ADTS,HTTP_128_MP3',
-		'includeTrackLength':True,	#debug
-		'audioAdPodCapable': True,	#debug
-		'includeTrackLength':True,	#debug
-		'xplatformAdCapable':True	#debug
-		
-		
+		'includeTrackLength':True
 	}
+	print('\r\n(i) Retrieving the playlist')
 	output = json_call('station.getPlaylist', data, url_args, en_blowfish = True, https = True)['result']
 	
 	tracks = output['items']
 	for t in tracks:
-		#print(t)
-		print('%s by %s from %s' % (t['songName'], t['artistName'], t['albumName']))
-	
+		try:
+			url = t['audioUrlMap']['lowQuality']['audioUrl'] #mediumQuality
+			print('Now playing "%s" by "%s" from "%s"' % (t['songName'], t['artistName'], t['albumName']))
+			logging.debug('url:%s\r\n' % url)
+			
+			# play dat thing
+			play(url, t['trackLength'])
+		except:
+			print('### adToken:%s' % t['adToken'])
+			#TODO: should probably do something with it, no idea what yet
 	return
 	
 # json call routine
@@ -141,10 +155,10 @@ def json_call(method, data, url_args = None, en_blowfish = False, https = True):
 	data = json.dumps(data).encode('utf-8')
 	
 	# encrypt using blowfish in needed
-	print('[client] %s' % data)
+	logging.debug('[client] %s' % data)
 	if en_blowfish:
 		data = encrypt(data)
-		print('[encrypted-client] %s' % data)
+		logging.debug('[encrypted-client] %s' % data)
 	
 	# add url args
 	url_args_string = ''
@@ -161,18 +175,34 @@ def json_call(method, data, url_args = None, en_blowfish = False, https = True):
 	protocol = 'https' if https else 'http'
 	
 	url = protocol + pandora_api_url + 'method=' + method + url_args_string
-	print('url: %s' % url)
-	output = parse.return_data(url, None, None, data, hdr)
+	logging.debug('url: %s' % url)
+	output = request.return_data(url, None, None, data, hdr)
 	
-	print(json.loads(output))
+	logging.debug(json.loads(output))
 	func_out = json.loads(output)
 	
 	return func_out
+	
+# play the audio stream via mplayer | TODO: find a better solution
+def play(url, track_length):
+	#https://web.archive.org/web/20151212195644/http://www.keyxl.com/aaa2fa5/302/MPlayer-keyboard-shortcuts.htm
+	print('q - skip, p - pause, 9 and 0	- decrease/increase volume')
+	p = subprocess.Popen(['mplayer\mplayer', url], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+	
+	for line in p.stdout:
+		if line.startswith(b'A:'):
+			pass
+		else:
+			logging.debug(line)
+	return
 	
 # main()
 time_offset = 0
 url_args = {}
 
+print('Welcome to Pyxis')
+proxy.setup()
 pandora_connect()
 station_id = pandora_get_stations()
-pandora_get_playlist(station_id)
+while True:
+	pandora_get_playlist(station_id)

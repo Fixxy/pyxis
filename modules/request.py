@@ -1,25 +1,28 @@
-import urllib, urllib.request, ssl, socket
+import urllib, urllib.request, ssl, logging
 from bs4 import BeautifulSoup
-from modules import proxy, socks
-from modules.sockshandler import SocksiPyHandler
+from modules import config
+from external import socks
+from external.sockshandler import SocksiPyHandler
 
 # get html / via proxy
 def return_data(url, proxy_ip, proxy_port, data, hdr, enable_proxy = True):
-	timeout=30
+	timeout = int(config.get_from_config('proxy','timeout'))
+	
+	#DEBUG: in case you wanna disable proxy at all:
+	#enable_proxy = False
+	
 	if (proxy_ip == None and enable_proxy):
-		proxy_ip, proxy_port = proxy.get_from_config()
+		proxy_ip = config.get_from_config('proxy','socks5')
+		proxy_port = int(config.get_from_config('proxy','socks5_port'))
 	
 	proxy_tls_handler = urllib.request.HTTPSHandler(context=ssl.SSLContext(ssl.PROTOCOL_TLS))
-	
 	proxy_socks_handler = SocksiPyHandler(socks.SOCKS5, proxy_ip, proxy_port)
 	
 	if enable_proxy:
-		print('retrieving via proxy %s:%s' % (proxy_ip, proxy_port))
+		logging.debug('retrieving via proxy %s:%s' % (proxy_ip, proxy_port))
 		opener = urllib.request.build_opener(proxy_socks_handler, proxy_tls_handler)
 	else:
 		opener = urllib.request.build_opener(proxy_tls_handler)
-	
-	#opener = urllib.request.build_opener(proxy_tls_handler)
 	
 	urllib.request.install_opener(opener)
 	
