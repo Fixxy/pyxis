@@ -20,7 +20,7 @@ def find_new():
 				config.replace_config(r[0].get_text(), r[1].get_text())
 				return
 			else:
-				print('> This proxy doesn\'t work (%s)')
+				print('> This proxy doesn\'t work')
 		except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionRefusedError) as e:
 			pass
 	return
