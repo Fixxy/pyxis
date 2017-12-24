@@ -7,6 +7,17 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import QUrl, QCoreApplication, QThread, pyqtSignal
 
 logging.basicConfig(level=logging.DEBUG)
+# load stuff from INI file
+hdr = {'User-agent': 'Pyxis', 'Content-type': 'text/plain'}
+pandora_api_url = config.get_from_config('pandora','api_url')
+device_model = config.get_from_config('pandora','device_model')
+partner_username = config.get_from_config('pandora','partner_username')
+partner_password = config.get_from_config('pandora','partner_password')
+version = config.get_from_config('pandora','version')
+encrypt_pass = config.get_from_config('pandora','encrypt_pass')
+decrypt_pass = config.get_from_config('pandora','decrypt_pass')
+username = config.get_from_config('pandora_user','username')
+password = config.get_from_config('pandora_user','password')
 
 class App(QWidget):
 	def __init__(self):
@@ -100,18 +111,6 @@ class testThread(QThread):
 					#self.get_ad(t['adToken'])
 
 class Pandora():
-	# load stuff from INI file
-	hdr = {'User-agent': 'Pyxis', 'Content-type': 'text/plain'}
-	pandora_api_url = config.get_from_config('pandora','api_url')
-	device_model = config.get_from_config('pandora','device_model')
-	partner_username = config.get_from_config('pandora','partner_username')
-	partner_password = config.get_from_config('pandora','partner_password')
-	version = config.get_from_config('pandora','version')
-	encrypt_pass = config.get_from_config('pandora','encrypt_pass')
-	decrypt_pass = config.get_from_config('pandora','decrypt_pass')
-	username = config.get_from_config('pandora_user','username')
-	password = config.get_from_config('pandora_user','password')
-	
 	time_offset = 0
 	url_args = {}
 	
