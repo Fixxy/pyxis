@@ -1,10 +1,11 @@
-import re, sys, socket, urllib, urllib.request, urllib.error, json, codecs, time, configparser, subprocess, logging, threading
+import re, sys, socket, urllib, urllib.request, urllib.error, json, codecs, time, configparser, logging, threading
 from bs4 import BeautifulSoup
-from modules import request, config, proxy
+from modules import request, config, proxy, ui
 from external import blowfish
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import QUrl, QCoreApplication, QThread, pyqtSignal
+from subprocess import Popen, PIPE, STDOUT
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QDialog, QGridLayout, QMainWindow
+from PyQt5.QtGui import QPixmap, QCloseEvent
+from PyQt5.QtCore import QRect, QUrl, QCoreApplication, QThread, pyqtSignal, QMetaObject
 
 logging.basicConfig(level=logging.DEBUG)
 # load stuff from INI file
@@ -19,61 +20,57 @@ decrypt_pass = config.get_from_config('pandora','decrypt_pass')
 username = config.get_from_config('pandora_user','username')
 password = config.get_from_config('pandora_user','password')
 
-class App(QWidget):
-	def __init__(self):
-		super().__init__()
-		self.title = 'Pyxis'
-		self.left = 200
-		self.top = 150
-		self.width = 500
-		self.height = 300
-		self.initUI()
-	
-	def initUI(self):
-		self.setWindowTitle(self.title)
-		self.setGeometry(self.left, self.top, self.width, self.height)
+class main_window(QMainWindow, ui.Ui_Dialog):
+	def __init__(self, parent=None):
+		super(main_window, self).__init__(parent)
+		self.setupUi(self)
+		self.pushButton.clicked.connect(self.playButton)
+		self.pushButton_2.clicked.connect(self.pauseButton)
+		#TODO: "Like" the song
+		#self.pushButton_3.clicked.connect(self.test)
 		
-		#img
-		#TODO: change placeholder img
-		self.albumImg = QLabel(self)
-		img = QPixmap('placeholder.png')
-		self.albumImg.setPixmap(img)
-		
-		#labels
-		self.songTitle = QLabel(self)
-		self.songTitle.move(250,20)
-		self.songTitle.setText('#SongName                ')
-		self.songArtist = QLabel(self)
-		self.songArtist.move(250,30)
-		self.songArtist.setText('#ArtistName                ')
-		self.albumName = QLabel(self)
-		self.albumName.move(250,40)
-		self.albumName.setText('#albumName                ')
-		
-		#button
-		self.button = QPushButton('Start', self)
-		self.button.move(250, 60)
-		self.button.clicked.connect(self.playButton)
-		
-		self.show()
+	def closeEvent(self, event):
+		# do stuff
+		if QCloseEvent:
+			try:
+				global mplayer_process
+				mplayer_process.kill()
+			except:
+				print('Unexpected error')
+			event.accept() # let the window close
+		else:
+			event.ignore()
 	
 	def playButton(self):
-		self.songTitle.setText('Initializing')
+		self.albumImg.setText('Initializing')
+		self.albumImg.adjustSize()
 		
 		#run thread
 		self.myThread = testThread()
 		self.myThread.start()
 		self.myThread.labelSignal.connect(self.changeLabel)
 		
-	def changeLabel(self, name, artist, album, url):
-		self.songTitle.setText(name)
-		self.songArtist.setText(artist)
-		self.albumName.setText(album)
+	def pauseButton(self):
+		global mplayer_process
+		mplayer_process.stdin.write('p\n'.encode('utf-8', 'ignore'))
+		mplayer_process.stdin.flush()
 		
-		data = urllib.request.urlopen(url).read()
+	def changeLabel(self, name, artist, album, url):
+		#set labels and album img
+		self.songTitle.setText(name)
+		self.songTitle.adjustSize()
+		self.songInfo.setText('by "%s" from "%s"' % (artist, album))
+		self.songInfo.adjustSize()
+		#self.albumName.setText(album)
+		#self.albumName.adjustSize()
+		
+		#TODO: spawn new transparent window like google music does?
+		data = request.return_data(url, None, None, None, hdr, enable_proxy = False)
 		img = QPixmap()
 		img.loadFromData(data)
-		self.albumImg.setPixmap(img)
+		resized_img = img.scaledToWidth(200)
+		self.albumImg.setPixmap(resized_img)
+		self.albumImg.adjustSize()
 	
 class testThread(QThread):
 	# Create the signal
@@ -284,27 +281,20 @@ class Pandora():
 	# play the audio stream via mplayer | TODO: find a better solution
 	def play(self, url):
 		#https://web.archive.org/web/20151212195644/http://www.keyxl.com/aaa2fa5/302/MPlayer-keyboard-shortcuts.htm
-		#p = subprocess.Popen(['mplayer\mplayer', url], stdin=subprocess.PIPE, stderr=subprocess.STDOUT).communicate
-		p = subprocess.Popen(['mplayer\mplayer', url], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+		global mplayer_process
+		mplayer_process = Popen(['mplayer\mplayer', url], stdin=PIPE, stdout=PIPE, stderr=STDOUT)
 		
-		for line in p.stdout:
+		for line in mplayer_process.stdout:
 			#if not (line.startswith(b'A:') or line.startswith(b'\rCache fill')):
 				#logging.debug(line)
 			pass
 		return
-'''
-print('Welcome to Pyxis')
-proxy.setup()
 
-pandora = Pandora()
-pandora.connect()
-station_id = pandora.get_stations()
-
-while True:
-	pandora.get_playlist(station_id)
-'''
-
-if __name__ == '__main__':
+def main():
 	app = QApplication(sys.argv)
-	ex = App()
-	sys.exit(app.exec_())
+	form = main_window()
+	form.show()
+	app.exec_()
+	
+if __name__ == '__main__':
+    main()
