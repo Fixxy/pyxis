@@ -28,6 +28,7 @@ class main_window(QMainWindow, ui.Ui_Dialog):
 		self.pushButton_2.clicked.connect(self.pauseButton)
 		#TODO: "Like" the song
 		#self.pushButton_3.clicked.connect(self.test)
+		self.pushButton_4.clicked.connect(self.skipButton)
 		
 	def closeEvent(self, event):
 		# do stuff
@@ -50,31 +51,40 @@ class main_window(QMainWindow, ui.Ui_Dialog):
 		self.myThread.start()
 		self.myThread.labelSignal.connect(self.changeLabel)
 		
+	#TODO: merge pause and skip functions?
 	def pauseButton(self):
 		global mplayer_process
 		mplayer_process.stdin.write('p\n'.encode('utf-8', 'ignore'))
 		mplayer_process.stdin.flush()
 		
-	def changeLabel(self, name, artist, album, url):
+	def skipButton(self):
+		global mplayer_process
+		mplayer_process.stdin.write('q\n'.encode('utf-8', 'ignore'))
+		mplayer_process.stdin.flush()
+		
+	def changeLabel(self, name, artist, album, url, fav):
 		#set labels and album img
 		self.songTitle.setText(name)
 		self.songTitle.adjustSize()
 		self.songInfo.setText('by "%s" from "%s"' % (artist, album))
 		self.songInfo.adjustSize()
-		#self.albumName.setText(album)
-		#self.albumName.adjustSize()
+		if fav == 1:
+			self.favOrNot.setText('Yes')
+		else:
+			self.favOrNot.setText('No')
+		self.favOrNot.adjustSize()
 		
 		#TODO: spawn new transparent window like google music does?
 		data = request.return_data(url, None, None, None, hdr, enable_proxy = False)
 		img = QPixmap()
 		img.loadFromData(data)
-		resized_img = img.scaledToWidth(200)
+		resized_img = img.scaledToWidth(130)
 		self.albumImg.setPixmap(resized_img)
 		self.albumImg.adjustSize()
 	
 class testThread(QThread):
 	# Create the signal
-	labelSignal = pyqtSignal(str, str, str, str)
+	labelSignal = pyqtSignal(str, str, str, str, int)
 	
 	def __init__(self):
 		QThread.__init__(self)
@@ -101,7 +111,7 @@ class testThread(QThread):
 						playing = ('%s <3' % playing)
 					print(playing)
 					# Emit the signal and play
-					self.labelSignal.emit(t['songName'], t['artistName'], t['albumName'], t['albumArtUrl'])
+					self.labelSignal.emit(t['songName'], t['artistName'], t['albumName'], t['albumArtUrl'], t['songRating'])
 					p.play(url)
 				except:
 					print('### adToken:%s' % t['adToken'])
@@ -222,15 +232,11 @@ class Pandora():
 		}
 		print('\r\n(i) Retrieving new playlist')
 		output = self.json_call('station.getPlaylist', data, self.url_args, en_blowfish = True, https = True)['result']
-		
 		tracks = output['items']
-		
 		return tracks
 	
 	# get the ad's audio link
 	def get_ad(self, ad_token):
-		global time_offset
-		global url_args
 		sync_time = int(time.time() + self.time_offset)
 		
 		data = {
@@ -243,6 +249,21 @@ class Pandora():
 		output = self.json_call('ad.getAdMetadata', data, self.url_args, en_blowfish = True, https = True)['result']
 		
 		#output['audioUrlMap']['audioUrl']
+		return
+		
+	# love / ban song
+	def love_ban(self, stats, station_id, track_id):
+		sync_time = int(time.time() + self.time_offset)
+		
+		data = {
+			'stationToken':station_id,
+			'trackToken':track_id,
+			'isPositive':True,
+			'userAuthToken':self.url_args['userAuthToken'],
+			'syncTime':sync_time
+		}
+		print('\r\n(i) Loving song...')
+		output = self.json_call('station.addFeedback', data, self.url_args, en_blowfish = True, https = True)['result']
 		return
 	
 	# json call routine
@@ -271,7 +292,16 @@ class Pandora():
 		
 		url = protocol + pandora_api_url + 'method=' + method + url_args_string
 		logging.debug('url: %s' % url)
-		output = request.return_data(url, None, None, data, hdr)
+		
+		############# RETRY TEST #############
+		for i in range(0,3):
+			logging.debug('Retry #%s' % i)
+			try:
+				output = request.return_data(url, None, None, data, hdr)
+				break
+			except urllib.error.URLError:
+				pass
+		############# RETRY TEST #############
 		
 		logging.debug(json.loads(output))
 		func_out = json.loads(output)
