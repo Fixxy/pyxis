@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'untitled.ui'
+# Form implementation generated from reading ui file 'ui_main.ui'
 #
 # Created by: PyQt5 UI code generator 5.9.2
 #
@@ -43,7 +43,18 @@ class Ui_Dialog(object):
         self.pushButton.setGeometry(QtCore.QRect(150, 110, 51, 31))
         self.pushButton.setObjectName("pushButton")
         self.pushButton_3 = QtWidgets.QPushButton(Dialog)
-        self.pushButton_3.setGeometry(QtCore.QRect(420, 110, 71, 31))
+        self.pushButton_3.setGeometry(QtCore.QRect(380, 110, 51, 31))
+        palette = QtGui.QPalette()
+        brush = QtGui.QBrush(QtGui.QColor(0, 155, 0))
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.ButtonText, brush)
+        brush = QtGui.QBrush(QtGui.QColor(0, 155, 0))
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.ButtonText, brush)
+        brush = QtGui.QBrush(QtGui.QColor(120, 120, 120))
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.ButtonText, brush)
+        self.pushButton_3.setPalette(palette)
         self.pushButton_3.setObjectName("pushButton_3")
         self.pushButton_2 = QtWidgets.QPushButton(Dialog)
         self.pushButton_2.setGeometry(QtCore.QRect(210, 110, 51, 31))
@@ -69,6 +80,20 @@ class Ui_Dialog(object):
         self.favOrNot = QtWidgets.QLabel(self.gridLayoutWidget_5)
         self.favOrNot.setObjectName("favOrNot")
         self.gridLayout_5.addWidget(self.favOrNot, 0, 0, 1, 1)
+        self.pushButton_5 = QtWidgets.QPushButton(Dialog)
+        self.pushButton_5.setGeometry(QtCore.QRect(440, 110, 51, 31))
+        palette = QtGui.QPalette()
+        brush = QtGui.QBrush(QtGui.QColor(155, 0, 0))
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.ButtonText, brush)
+        brush = QtGui.QBrush(QtGui.QColor(155, 0, 0))
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.ButtonText, brush)
+        brush = QtGui.QBrush(QtGui.QColor(120, 120, 120))
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        palette.setBrush(QtGui.QPalette.Disabled, QtGui.QPalette.ButtonText, brush)
+        self.pushButton_5.setPalette(palette)
+        self.pushButton_5.setObjectName("pushButton_5")
 
         self.retranslateUi(Dialog)
         QtCore.QMetaObject.connectSlotsByName(Dialog)
@@ -80,11 +105,12 @@ class Ui_Dialog(object):
         self.songInfo.setText(_translate("Dialog", "songInfo"))
         self.songTitle.setText(_translate("Dialog", "songTitle"))
         self.pushButton.setText(_translate("Dialog", "Start"))
-        self.pushButton_3.setText(_translate("Dialog", "Like"))
+        self.pushButton_3.setText(_translate("Dialog", "Love"))
         self.pushButton_2.setText(_translate("Dialog", "Pause"))
         self.pushButton_4.setText(_translate("Dialog", "Skip"))
         self.staticLabel_1.setText(_translate("Dialog", "Favorite:"))
         self.favOrNot.setText(_translate("Dialog", "-"))
+        self.pushButton_5.setText(_translate("Dialog", "Ban"))
 
 
 if __name__ == "__main__":

@@ -1,11 +1,12 @@
 import re, sys, socket, urllib, urllib.request, urllib.error, json, codecs, time, configparser, logging, threading
 from bs4 import BeautifulSoup
-from modules import request, config, proxy, ui
+from modules import request, config, proxy, ui_main, ui_stations
 from external import blowfish
 from subprocess import Popen, PIPE, STDOUT
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QDialog, QGridLayout, QMainWindow
 from PyQt5.QtGui import QPixmap, QCloseEvent
 from PyQt5.QtCore import QRect, QUrl, QCoreApplication, QThread, pyqtSignal, QMetaObject
+from queue import Queue
 
 logging.basicConfig(level=logging.DEBUG)
 # load stuff from INI file
@@ -20,16 +21,39 @@ decrypt_pass = config.get_from_config('pandora','decrypt_pass')
 username = config.get_from_config('pandora_user','username')
 password = config.get_from_config('pandora_user','password')
 
-class main_window(QMainWindow, ui.Ui_Dialog):
+# Station list pop-up
+class stations_window(QDialog, ui_stations.Ui_Dialog):
+	def __init__(self, stations, queue, parent):
+		self.queue = queue
+		self.stations = stations
+		super(stations_window, self).__init__(parent)
+		self.setupUi(self)
+		
+		# list them in combobox
+		for i in range(0, len(self.stations)):
+			self.comboBox.addItem('%s - %s [%s]' % (i, self.stations[i]['stationName'], self.stations[i]['stationId']))
+			
+		self.pushButton.clicked.connect(self.station_select)
+		
+	# Send station_id to the queue
+	def station_select(self):
+		list_id = self.comboBox.currentIndex()
+		station_id = self.stations[list_id]['stationId']
+		print('\r\n(i) Selected: %s' % self.comboBox.currentText())
+		self.queue.put(station_id)
+		self.close()
+		
+class main_window(QMainWindow, ui_main.Ui_Dialog):
 	def __init__(self, parent=None):
 		super(main_window, self).__init__(parent)
 		self.setupUi(self)
-		self.pushButton.clicked.connect(self.playButton)
-		self.pushButton_2.clicked.connect(self.pauseButton)
-		#TODO: "Like" the song
-		#self.pushButton_3.clicked.connect(self.test)
-		self.pushButton_4.clicked.connect(self.skipButton)
+		self.pushButton.clicked.connect(self.start_button)
+		self.pushButton_2.clicked.connect(lambda: self.send_command('p\n')) #pauseButton
+		self.pushButton_3.clicked.connect(lambda: self.rate_button(True)) #loveButton
+		self.pushButton_4.clicked.connect(lambda: self.send_command('q\n')) #skipButton
+		self.pushButton_5.clicked.connect(lambda: self.rate_button(False)) #banButton
 		
+	# overriding standard close event
 	def closeEvent(self, event):
 		# do stuff
 		if QCloseEvent:
@@ -42,51 +66,69 @@ class main_window(QMainWindow, ui.Ui_Dialog):
 		else:
 			event.ignore()
 	
-	def playButton(self):
+	def start_button(self):
 		self.albumImg.setText('Initializing')
 		self.albumImg.adjustSize()
 		
+		#init pandora
+		self.p = Pandora()
+		
 		#run thread
-		self.myThread = testThread()
-		self.myThread.start()
-		self.myThread.labelSignal.connect(self.changeLabel)
-		
-	#TODO: merge pause and skip functions?
-	def pauseButton(self):
+		self.queue = Queue()
+		self.pandora_thread = connectThread(self.queue, self.p)
+		self.pandora_thread.start()
+		self.pandora_thread.labelSignal.connect(self.update_labels)
+		self.pandora_thread.stationsSignal.connect(self.show_stations)
+	
+	def send_command(self, com):
 		global mplayer_process
-		mplayer_process.stdin.write('p\n'.encode('utf-8', 'ignore'))
+		mplayer_process.stdin.write(com.encode('utf-8', 'ignore'))
 		mplayer_process.stdin.flush()
 		
-	def skipButton(self):
-		global mplayer_process
-		mplayer_process.stdin.write('q\n'.encode('utf-8', 'ignore'))
-		mplayer_process.stdin.flush()
-		
-	def changeLabel(self, name, artist, album, url, fav):
+	def update_labels(self, name, artist, album, url, fav, track, station):
 		#set labels and album img
 		self.songTitle.setText(name)
 		self.songTitle.adjustSize()
 		self.songInfo.setText('by "%s" from "%s"' % (artist, album))
 		self.songInfo.adjustSize()
-		if fav == 1:
-			self.favOrNot.setText('Yes')
-		else:
-			self.favOrNot.setText('No')
+		self.favOrNot.setText('Yes' if fav == 1 else 'No')
 		self.favOrNot.adjustSize()
+		self.current_track = track
+		self.current_station = station
 		
-		#TODO: spawn new transparent window like google music does?
+		#TODO: spawn new transparent window like Google Music does?
 		data = request.return_data(url, None, None, None, hdr, enable_proxy = False)
 		img = QPixmap()
 		img.loadFromData(data)
 		resized_img = img.scaledToWidth(130)
 		self.albumImg.setPixmap(resized_img)
 		self.albumImg.adjustSize()
-	
-class testThread(QThread):
+		
+	# Open pop-up and log the info
+	def show_stations(self, stations):
+		print('\r\n(i) Found stations:')
+		for i in range(0, len(stations)):
+			print(i, stations[i]['stationId'], stations[i]['stationName'])
+		window = stations_window(stations, self.queue, self)
+		window.show()
+		
+	def rate_button(self, rating):
+		print('\r\n(i) Loving song...' if rating == True else '\r\n(i) Banning song...')
+		self.p.rate_song(self.current_station, self.current_track, rating)
+		if (rating == False):
+			self.send_command('q\n')
+		else:
+			self.favOrNot.setText('Yes')
+			self.favOrNot.adjustSize()
+		
+class connectThread(QThread):
 	# Create the signal
-	labelSignal = pyqtSignal(str, str, str, str, int)
+	labelSignal = pyqtSignal(str, str, str, str, int, str, str)
+	stationsSignal = pyqtSignal(list)
 	
-	def __init__(self):
+	def __init__(self, queue, pandora):
+		self.in_queue = queue
+		self.p = pandora
 		QThread.__init__(self)
 	
 	def __del__(self):
@@ -95,13 +137,22 @@ class testThread(QThread):
 	def run(self):
 		print('Welcome to Pyxis')
 		proxy.setup()
-
-		p = Pandora()
-		p.connect()
-		station_id = p.get_stations()
-
+		self.p.connect()
+		
+		# Station select window
+		stations = self.p.get_stations_only()
+		self.stationsSignal.emit(stations)
+		
+		# wait for the data in queue
 		while True:
-			tracks = p.get_playlist(self, station_id)
+			if not self.in_queue.empty():
+				station_id = self.in_queue.get()
+				break
+			else:
+				pass
+		
+		while True:
+			tracks = self.p.get_playlist(self, station_id)
 			print('(i) Starting playback')
 			for t in tracks:
 				try:
@@ -110,9 +161,9 @@ class testThread(QThread):
 					if t['songRating'] == 1:
 						playing = ('%s <3' % playing)
 					print(playing)
-					# Emit the signal and play
-					self.labelSignal.emit(t['songName'], t['artistName'], t['albumName'], t['albumArtUrl'], t['songRating'])
-					p.play(url)
+					# change labels, play audio and store data for the "Like" button
+					self.labelSignal.emit(t['songName'], t['artistName'], t['albumName'], t['albumArtUrl'], t['songRating'], t['trackToken'], t['stationId'])
+					self.p.play(url)
 				except:
 					print('### adToken:%s' % t['adToken'])
 					#self.get_ad(t['adToken'])
@@ -189,7 +240,7 @@ class Pandora():
 		return self.url_args
 	
 	# self-explanatory
-	def get_stations(self):
+	def get_stations_only(self):
 		data = { }
 		sync_time = int(time.time() + self.time_offset)
 		new_user_auth_token = self.url_args['userAuthToken']
@@ -210,14 +261,8 @@ class Pandora():
 			output = self.json_call('user.getStationList', data, self.url_args, en_blowfish = True, https = False)['result']
 			config.last_authtoken(new_user_auth_token, 'user_auth_token', get = False)
 		
-		print('\r\n(i) Stations:')
 		result = output['stations']
-		for i in range(0, len(result)):
-			print(i, result[i]['stationId'], result[i]['stationName'])
-
-		station_num = input('Select station: ')
-		station_id = result[int(station_num)]['stationId']
-		return station_id
+		return result
 	
 	# self-explanatory
 	def get_playlist(self, form, station_id):
@@ -247,24 +292,19 @@ class Pandora():
 		}
 		print('\r\n(i) Receiving the ad metadata')
 		output = self.json_call('ad.getAdMetadata', data, self.url_args, en_blowfish = True, https = True)['result']
-		
 		#output['audioUrlMap']['audioUrl']
-		return
 		
-	# love / ban song
-	def love_ban(self, stats, station_id, track_id):
+	# rate song
+	def rate_song(self, station_id, track_id, rating):
 		sync_time = int(time.time() + self.time_offset)
-		
 		data = {
 			'stationToken':station_id,
 			'trackToken':track_id,
-			'isPositive':True,
+			'isPositive':rating,
 			'userAuthToken':self.url_args['userAuthToken'],
 			'syncTime':sync_time
 		}
-		print('\r\n(i) Loving song...')
-		output = self.json_call('station.addFeedback', data, self.url_args, en_blowfish = True, https = True)['result']
-		return
+		output = self.json_call('station.addFeedback', data, self.url_args, en_blowfish = True, https = False)['result']
 	
 	# json call routine
 	def json_call(self, method, data, url_args = None, en_blowfish = False, https = True):
@@ -310,7 +350,6 @@ class Pandora():
 	
 	# play the audio stream via mplayer | TODO: find a better solution
 	def play(self, url):
-		#https://web.archive.org/web/20151212195644/http://www.keyxl.com/aaa2fa5/302/MPlayer-keyboard-shortcuts.htm
 		global mplayer_process
 		mplayer_process = Popen(['mplayer\mplayer', url], stdin=PIPE, stdout=PIPE, stderr=STDOUT)
 		
@@ -318,7 +357,6 @@ class Pandora():
 			#if not (line.startswith(b'A:') or line.startswith(b'\rCache fill')):
 				#logging.debug(line)
 			pass
-		return
 
 def main():
 	app = QApplication(sys.argv)

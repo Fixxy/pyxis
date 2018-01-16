@@ -8,7 +8,7 @@ from external.sockshandler import SocksiPyHandler
 def return_data(url, proxy_ip, proxy_port, data, hdr, enable_proxy = True):
 	timeout = int(config.get_from_config('proxy','timeout'))
 	
-	#DEBUG: in case you wanna disable proxy at all:
+	#DEBUG: in case you want to disable proxy completely:
 	#enable_proxy = False
 	
 	if (proxy_ip == None and enable_proxy):
@@ -23,7 +23,6 @@ def return_data(url, proxy_ip, proxy_port, data, hdr, enable_proxy = True):
 		opener = urllib.request.build_opener(proxy_socks_handler, proxy_tls_handler)
 	else:
 		opener = urllib.request.build_opener(proxy_tls_handler)
-	
 	urllib.request.install_opener(opener)
 	
 	req = urllib.request.Request(url, data=data, headers=hdr)
