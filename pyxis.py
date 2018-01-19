@@ -4,11 +4,11 @@ from modules import request, config, proxy, ui_main, ui_stations
 from external import blowfish
 from subprocess import Popen, PIPE, STDOUT
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QDialog, QGridLayout, QMainWindow
-from PyQt5.QtGui import QPixmap, QCloseEvent
+from PyQt5.QtGui import QPixmap, QCloseEvent, QMovie
 from PyQt5.QtCore import QRect, QUrl, QCoreApplication, QThread, pyqtSignal, QMetaObject
 from queue import Queue
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG) #filename='debug.log'
 # load stuff from INI file
 hdr = {'User-agent': 'Pyxis', 'Content-type': 'text/plain'}
 pandora_api_url = config.get_from_config('pandora','api_url')
@@ -20,6 +20,7 @@ encrypt_pass = config.get_from_config('pandora','encrypt_pass')
 decrypt_pass = config.get_from_config('pandora','decrypt_pass')
 username = config.get_from_config('pandora_user','username')
 password = config.get_from_config('pandora_user','password')
+retry = config.get_from_config('general','retry')
 
 # Station list pop-up
 class stations_window(QDialog, ui_stations.Ui_Dialog):
@@ -28,16 +29,19 @@ class stations_window(QDialog, ui_stations.Ui_Dialog):
 		self.stations = stations
 		super(stations_window, self).__init__(parent)
 		self.setupUi(self)
+		self.pushButton.clicked.connect(lambda: self.station_select(parent))
 		
-		# list them in combobox
+		# list them in a combo box
 		for i in range(0, len(self.stations)):
 			self.comboBox.addItem('%s - %s [%s]' % (i, self.stations[i]['stationName'], self.stations[i]['stationId']))
-			
-		self.pushButton.clicked.connect(self.station_select)
-		
-	# Send station_id to the queue
-	def station_select(self):
+			parent.comboBox.addItem('%s' % self.stations[i]['stationName'])
+			# populate stations combo box on the main form
+			parent.stations = self.stations 
+	
+	# Send station_id to queue
+	def station_select(self, parent):
 		list_id = self.comboBox.currentIndex()
+		parent.comboBox.setCurrentIndex(list_id)
 		station_id = self.stations[list_id]['stationId']
 		print('\r\n(i) Selected: %s' % self.comboBox.currentText())
 		self.queue.put(station_id)
@@ -47,12 +51,49 @@ class main_window(QMainWindow, ui_main.Ui_Dialog):
 	def __init__(self, parent=None):
 		super(main_window, self).__init__(parent)
 		self.setupUi(self)
-		self.pushButton.clicked.connect(self.start_button)
-		self.pushButton_2.clicked.connect(lambda: self.send_command('p\n')) #pauseButton
+		self.pushButton.clicked.connect(self.test)
+		self.pushButton_2.clicked.connect(lambda: self.send_command('pause\n')) #pauseButton
 		self.pushButton_3.clicked.connect(lambda: self.rate_button(True)) #loveButton
-		self.pushButton_4.clicked.connect(lambda: self.send_command('q\n')) #skipButton
+		self.pushButton_4.clicked.connect(lambda: self.send_command('quit\n')) #skipButton
 		self.pushButton_5.clicked.connect(lambda: self.rate_button(False)) #banButton
+		self.volumeSlider.valueChanged.connect(self.volume_change)
+		self.global_volume = 100 #default volume level
+		self.stations = None
 		
+		#show load.gif
+		self.movie = QMovie('ui/load.gif')
+		self.albumImg.setMovie(self.movie)
+		self.movie.start()
+		
+		#init pandora
+		self.p = Pandora()
+		
+		#run thread
+		self.queue = Queue()
+		self.pandora_thread = connectThread(self.queue, self.p)
+		self.pandora_thread.start()
+		self.pandora_thread.labelSignal.connect(self.update_labels)
+		self.pandora_thread.stationsSignal.connect(self.show_stations)
+		self.pandora_thread.changeVolumeSignal.connect(lambda: self.volume_change(self.global_volume))
+		self.comboBox.currentIndexChanged.connect(self.change_station)
+		
+	def test(self):
+		self.send_command('get_time_pos\n')
+		
+	def change_station(self, index):
+		print('chose id: %s' % index)
+		print('stations: %s' % self.stations) # in json
+		
+	def volume_change(self, volume):
+		self.global_volume = volume
+		try:
+			with self.queue.mutex:
+				self.queue.queue.clear()
+			self.queue.put(self.global_volume)
+			self.send_command('volume %s 1\n' % self.global_volume)
+		except:
+			logging.debug('couldn\'t change the volume')
+	
 	# overriding standard close event
 	def closeEvent(self, event):
 		# do stuff
@@ -66,26 +107,17 @@ class main_window(QMainWindow, ui_main.Ui_Dialog):
 		else:
 			event.ignore()
 	
-	def start_button(self):
-		self.albumImg.setText('Initializing')
-		self.albumImg.adjustSize()
-		
-		#init pandora
-		self.p = Pandora()
-		
-		#run thread
-		self.queue = Queue()
-		self.pandora_thread = connectThread(self.queue, self.p)
-		self.pandora_thread.start()
-		self.pandora_thread.labelSignal.connect(self.update_labels)
-		self.pandora_thread.stationsSignal.connect(self.show_stations)
-	
 	def send_command(self, com):
 		global mplayer_process
+		#print('command: %s' % com) #debug
 		mplayer_process.stdin.write(com.encode('utf-8', 'ignore'))
 		mplayer_process.stdin.flush()
 		
 	def update_labels(self, name, artist, album, url, fav, track, station):
+		#stop load.gif if it's running (first iteration)
+		if self.movie.state() == 2:
+			self.movie.stop()
+		
 		#set labels and album img
 		self.songTitle.setText(name)
 		self.songTitle.adjustSize()
@@ -125,6 +157,7 @@ class connectThread(QThread):
 	# Create the signal
 	labelSignal = pyqtSignal(str, str, str, str, int, str, str)
 	stationsSignal = pyqtSignal(list)
+	changeVolumeSignal = pyqtSignal()
 	
 	def __init__(self, queue, pandora):
 		self.in_queue = queue
@@ -133,7 +166,7 @@ class connectThread(QThread):
 	
 	def __del__(self):
 		self.wait()
-
+	
 	def run(self):
 		print('Welcome to Pyxis')
 		proxy.setup()
@@ -143,7 +176,7 @@ class connectThread(QThread):
 		stations = self.p.get_stations_only()
 		self.stationsSignal.emit(stations)
 		
-		# wait for the data in queue
+		# wait for the data in queue (station ID)
 		while True:
 			if not self.in_queue.empty():
 				station_id = self.in_queue.get()
@@ -163,7 +196,16 @@ class connectThread(QThread):
 					print(playing)
 					# change labels, play audio and store data for the "Like" button
 					self.labelSignal.emit(t['songName'], t['artistName'], t['albumName'], t['albumArtUrl'], t['songRating'], t['trackToken'], t['stationId'])
-					self.p.play(url)
+					
+					# request global_volume and wait for the data (volume)
+					self.changeVolumeSignal.emit()
+					while True:
+						if not self.in_queue.empty():
+							volume = self.in_queue.get()
+							self.p.play(url, volume)
+							break
+						else:
+							pass
 				except:
 					print('### adToken:%s' % t['adToken'])
 					#self.get_ad(t['adToken'])
@@ -217,7 +259,6 @@ class Pandora():
 			'password':password,
 			'syncTime':sync_time
 		}
-		
 		self.url_args['partnerId'] = partner_info['partnerId']
 		
 		# check old auth partner parameter
@@ -310,7 +351,7 @@ class Pandora():
 	def json_call(self, method, data, url_args = None, en_blowfish = False, https = True):
 		data = json.dumps(data).encode('utf-8')
 		
-		# encrypt using blowfish in needed
+		# encrypt using blowfish if needed
 		logging.debug('[client] %s' % data)
 		if en_blowfish:
 			data = self.encrypt(data)
@@ -333,15 +374,14 @@ class Pandora():
 		url = protocol + pandora_api_url + 'method=' + method + url_args_string
 		logging.debug('url: %s' % url)
 		
-		############# RETRY TEST #############
-		for i in range(0,3):
+		# retry JSON_CALL n times
+		for i in range(0,int(retry)):
 			logging.debug('Retry #%s' % i)
 			try:
 				output = request.return_data(url, None, None, data, hdr)
 				break
 			except urllib.error.URLError:
 				pass
-		############# RETRY TEST #############
 		
 		logging.debug(json.loads(output))
 		func_out = json.loads(output)
@@ -349,10 +389,12 @@ class Pandora():
 		return func_out
 	
 	# play the audio stream via mplayer | TODO: find a better solution
-	def play(self, url):
+	#http://mplayerhq.hu/DOCS/tech/slave.txt
+	def play(self, url, volume):
 		global mplayer_process
-		mplayer_process = Popen(['mplayer\mplayer', url], stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-		
+		params = ['-slave', '-volume', str(volume)]
+		mplayer_process = Popen(['mplayer\mplayer', url] + params, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+		#logging.debug(mplayer_process.args)
 		for line in mplayer_process.stdout:
 			#if not (line.startswith(b'A:') or line.startswith(b'\rCache fill')):
 				#logging.debug(line)
