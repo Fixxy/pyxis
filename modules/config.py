@@ -22,11 +22,10 @@ def last_authtoken(token, type, get = True):
 	return last_authtoken
 	
 # replace proxy
-def replace_config(proxy_ip, proxy_port):
+def replace_config(proxy):
 	config = configparser.ConfigParser()
 	config.read(config_file)
-	config['proxy']['socks5'] = proxy_ip
-	config['proxy']['socks5_port'] = proxy_port
+	config['proxy']['proxy'] = proxy
 	with open(config_file, 'w') as configfile:
 		config.write(configfile)
 	return

@@ -1,7 +1,6 @@
 import re, sys, socket, urllib, urllib.request, urllib.error, json, codecs, time, configparser, logging, threading
 from bs4 import BeautifulSoup
-from modules import request, config, proxy, ui_main, ui_stations
-from external import blowfish
+from modules import request, config, proxy, ui_main, ui_stations, blowfish
 from subprocess import Popen, PIPE, STDOUT
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QDialog, QGridLayout, QMainWindow
 from PyQt5.QtGui import QPixmap, QCloseEvent, QMovie
@@ -79,10 +78,16 @@ class main_window(QMainWindow, ui_main.Ui_Dialog):
 		
 	def test(self):
 		self.send_command('get_time_pos\n')
+		logging.debug('test button')
 		
 	def change_station(self, index):
-		print('chose id: %s' % index)
-		print('stations: %s' % self.stations) # in json
+		logging.debug('chose id: %s' % index)
+		#print('stations: %s' % self.stations) # in json
+		try:
+			json_stations = json.loads(json.dumps(self.stations)) #obj to str -> str to json
+			logging.debug(json_stations[index])
+		except:
+			logging.debug('station list is empty')
 		
 	def volume_change(self, volume):
 		self.global_volume = volume
@@ -93,6 +98,7 @@ class main_window(QMainWindow, ui_main.Ui_Dialog):
 			self.send_command('volume %s 1\n' % self.global_volume)
 		except:
 			logging.debug('couldn\'t change the volume')
+		#TODO: somehow kill queue and start another
 	
 	# overriding standard close event
 	def closeEvent(self, event):
@@ -129,7 +135,7 @@ class main_window(QMainWindow, ui_main.Ui_Dialog):
 		self.current_station = station
 		
 		#TODO: spawn new transparent window like Google Music does?
-		data = request.return_data(url, None, None, None, hdr, enable_proxy = False)
+		data = request.return_data(url, None, None, hdr, enable_proxy = False)
 		img = QPixmap()
 		img.loadFromData(data)
 		resized_img = img.scaledToWidth(130)
@@ -378,9 +384,10 @@ class Pandora():
 		for i in range(0,int(retry)):
 			logging.debug('Retry #%s' % i)
 			try:
-				output = request.return_data(url, None, None, data, hdr)
+				output = request.return_data(url, None, data, hdr)
 				break
-			except urllib.error.URLError:
+			except (urllib.error.URLError, socket.timeout) as e:
+				logging.debug('exception: %s' % e)
 				pass
 		
 		logging.debug(json.loads(output))
