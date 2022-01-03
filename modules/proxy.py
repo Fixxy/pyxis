@@ -25,7 +25,7 @@ def setup():
 
 def find_new():
 	html = request.return_data('https://www.us-proxy.org/', None, None, hdr, enable_proxy = False)
-	table = request.get_tag_data(html, 'table', 0, 'proxylisttable')[0].tbody
+	table = request.get_tag_data(html, 'table', 1, 'table-striped')[0].tbody
 	rows = table.find_all('tr')
 	for row in rows:
 		r = row.find_all('td')
